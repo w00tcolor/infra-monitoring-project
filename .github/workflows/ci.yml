@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  scripts:
+    name: Bash scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: |
+          bash -n check_api.sh
+          bash -n analyze_logs.sh
+
+      - name: Test check_api.sh (expect exit code 0)
+        run: ./check_api.sh https://httpbin.org/status/200
+
+      - name: Test check_api.sh failure path (expect exit code 1)
+        run: |
+          set +e
+          ./check_api.sh https://httpbin.org/status/404
+          rc=$?
+          set -e
+          echo "exit code: $rc"
+          test "$rc" -eq 1
+
+      - name: Test analyze_logs.sh
+        run: |
+          ./analyze_logs.sh -n 300
+          test "$(wc -l < access.log)" -ge 300
+
+  compose:
+    name: Docker Compose stack
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml
+        run: docker compose config -q
+
+      - name: Start stack
+        run: docker compose up -d
+
+      - name: Check proxy response
+        run: |
+          for i in $(seq 1 15); do
+            body=$(curl -s http://localhost:80 || true)
+            if [ "$body" = "Monitoring Service Active" ]; then
+              echo "OK: $body"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Unexpected response: '$body'"
+          docker compose logs
+          exit 1
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down
