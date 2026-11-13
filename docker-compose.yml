@@ -1,0 +1,31 @@
+services:
+  api:
+    image: hashicorp/http-echo:latest
+    container_name: monitoring-api
+    command:
+      - "-listen=:8080"
+      - "-text=Monitoring Service Active"
+    # Порт 8080 открыт только во внутренней сети: снаружи доступ идёт через proxy
+    expose:
+      - "8080"
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  proxy:
+    image: nginx:alpine
+    container_name: monitoring-proxy
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+networks:
+  monitoring:
+    name: monitoring-net
+    driver: bridge
